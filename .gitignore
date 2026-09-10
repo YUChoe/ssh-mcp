@@ -1,0 +1,5 @@
+node_modules/
+connection-config.json
+session-store.json
+downloads/
+*.tar.gz
