@@ -15,9 +15,12 @@ export async function downloadFile(sessionId, remotePath, localBase = './downloa
   const entry = await session.ensure(sessionId);
   const sft = await openSftp(entry.conn);
 
-  // 원격 절대 경로의 선행 / 를 제거하여 로컬 상대 경로로 변환
-  const relative = remotePath.replace(/^\/+/, '');
-  const localPath = path.join(localBase, ...relative.split('/'));
+  // 원격 경로 구조를 localBase 아래에 재현한다. '..' 등으로 localBase 를 벗어나는 경로는 거부한다
+  const base = path.resolve(localBase);
+  const localPath = path.resolve(base, ...remotePath.split('/').filter(Boolean));
+  if (!localPath.startsWith(base + path.sep)) {
+    throw new Error(`remotePath escapes localBase: ${remotePath}`);
+  }
   await fs.mkdir(path.dirname(localPath), { recursive: true });
 
   await new Promise((res, rej) =>
@@ -48,7 +51,7 @@ export async function uploadFile(sessionId, localPath, remotePath) {
   sft.end();
 
   // 원격 md5sum으로 체크섬 검증
-  const { output } = await session.execCommand(sessionId, `md5sum ${remotePath} | awk '{print $1}'`);
+  const { output } = await session.execCommand(sessionId, `md5sum ${session.shellQuote(remotePath)} | awk '{print $1}'`);
   const remoteChecksum = output.trim();
 
   return {

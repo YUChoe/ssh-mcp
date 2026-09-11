@@ -172,15 +172,14 @@ server.tool(
 
 server.tool(
   'checkout',
-  '클리어케이스 ctco로 파일을 체크아웃한다',
+  '클리어케이스 ctco로 파일을 체크아웃한다. 체크아웃 코멘트는 사이트 스크립트(ctco)가 자동 생성한다',
   {
     sessionId: z.string(),
     remotePath: z.string(),
-    comment: z.string().optional(),
   },
-  async ({ sessionId, remotePath, comment }) => {
-    const commentArg = comment ? `-c "${comment}"` : '-nc';
-    const result = await session.execCommand(sessionId, `ctco ${commentArg} ${remotePath}`);
+  async ({ sessionId, remotePath }) => {
+    // ctco 는 자체적으로 -c "<comment>" 를 붙이는 사이트 스크립트이므로 -c/-nc 를 넘기면 cleartool 이 거부한다
+    const result = await session.execCommand(sessionId, `ctco ${session.shellQuote(remotePath)}`);
     return { content: [{ type: 'text', text: execText(result, 30000) }] };
   }
 );

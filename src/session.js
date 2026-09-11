@@ -5,6 +5,12 @@ import * as store from './store.js';
 const MARKER = '__MCP_DONE__';
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r/g;
 
+// 셸 인자를 단일 인용한다 (csh/sh 공용). 개행과 !(csh history 치환)는 안전하게 인용할 수 없어 거부한다
+export function shellQuote(arg) {
+  if (/[\r\n!]/.test(arg)) throw new Error(`unsupported character in shell argument: ${JSON.stringify(arg)}`);
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
 const LEGACY = {
   kex: ['diffie-hellman-group14-sha1', 'diffie-hellman-group1-sha1', 'ecdh-sha2-nistp256'],
   cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr', 'aes128-cbc', '3des-cbc'],
