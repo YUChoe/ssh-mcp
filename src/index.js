@@ -79,14 +79,14 @@ server.tool(
 
 server.tool(
   'create_session',
-  '파라미터를 직접 지정해 SSH 연결 + viewScript 실행을 수행한다. 저장된 설정과 무관하게 동작한다',
+  '파라미터를 직접 지정해 SSH 연결(+ viewScript 실행)을 수행한다. 저장된 설정과 무관하게 동작한다. 같은 host/username/viewScript 의 저장 세션이 있으면 그 id 를 재사용한다',
   {
     host: z.string(),
     port: z.number().optional(),
     username: z.string(),
     password: z.string().optional(),
     privateKey: z.string().optional(),
-    viewScript: z.string().describe('ClearCase view 설정 스크립트명'),
+    viewScript: z.string().optional().describe('ClearCase view 설정 스크립트명. ClearCase 가 없는 서버는 생략'),
   },
   async (args) => {
     const result = await session.createSession(args);

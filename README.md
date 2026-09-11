@@ -72,7 +72,7 @@ file leaking (backups, accidental sharing), not against an attacker with access 
 | `save_config` | Save default connection settings (host, port, username, password, viewScript, project) |
 | `get_config` | Show saved settings with the password masked |
 | `connect` | SSH login → run viewScript → `rel` → select project → verify `XN_HOME`; returns `sessionId` |
-| `create_session` | Open a session with explicit parameters, independent of saved config |
+| `create_session` | Open a session with explicit parameters, independent of saved config. `viewScript` is optional. Reuses the stored session with the same host/username/viewScript |
 | `set_project` | Run `rel` and select a project on an existing session |
 | `exec` | Run a shell command and return its output (`timeoutMs` optional) |
 | `send_input` | Send a line to an interactive prompt and return the next output |
@@ -173,7 +173,7 @@ node /path/to/ssh-mcp/src/index.js
 | `save_config` | 기본 연결 설정 저장 (host, port, username, password, viewScript, project) |
 | `get_config` | 저장된 설정 조회 (비밀번호 마스킹) |
 | `connect` | SSH 로그인 → viewScript 실행 → `rel` → 프로젝트 선택 → `XN_HOME` 확인. `sessionId` 반환 |
-| `create_session` | 저장된 설정과 무관하게 파라미터를 직접 지정해 세션 생성 |
+| `create_session` | 저장된 설정과 무관하게 파라미터를 직접 지정해 세션 생성. `viewScript` 는 선택. 같은 host/username/viewScript 의 저장 세션이 있으면 재사용 |
 | `set_project` | 기존 세션에서 `rel` 실행 후 프로젝트 선택 |
 | `exec` | 셸 명령 실행 후 출력 반환 (`timeoutMs` 선택) |
 | `send_input` | 인터랙티브 프롬프트에 한 줄 입력 후 다음 출력 반환 |

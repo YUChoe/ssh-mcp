@@ -143,6 +143,23 @@ async function restoreState(shell, meta) {
   }
 }
 
+// 활성 세션으로 등록한다. error 는 접속 중 여러 번 발생할 수 있으므로 on 으로 받는다
+// (리스너가 없는 상태에서 error 가 발생하면 프로세스가 종료된다)
+function register(id, conn, shell, meta) {
+  const entry = { conn, shell, meta };
+  active.set(id, entry);
+  conn.once('close', () => active.delete(id));
+  conn.on('error', () => active.delete(id));
+  return entry;
+}
+
+// host/username/viewScript 가 같은 저장 세션이 있으면 그 id 를 반환한다 (스토어 증식 방지)
+function findStored({ host, username, viewScript }) {
+  const hit = Object.entries(store.all()).find(([, m]) =>
+    m.host === host && m.username === username && (m.viewScript || null) === viewScript);
+  return hit ? hit[0] : null;
+}
+
 export async function ensure(id) {
   if (active.has(id)) return active.get(id);
 
@@ -151,39 +168,35 @@ export async function ensure(id) {
 
   const { conn, shell } = await openConnection(meta);
   await restoreState(shell, meta);
-
-  const entry = { conn, shell, meta };
-  active.set(id, entry);
-  conn.once('close', () => active.delete(id));
-  conn.once('error', () => active.delete(id));
-  return entry;
+  return register(id, conn, shell, meta);
 }
 
 export async function createSession(opts) {
-  const id = randomUUID();
+  const viewScript = opts.viewScript || null;
+  const id = findStored({ host: opts.host, username: opts.username, viewScript }) ?? randomUUID();
+  if (active.has(id)) return { id, output: '', reused: true };
+
   const meta = {
     host: opts.host,
     port: opts.port ?? 22,
     username: opts.username,
     password: opts.password ?? null,
     privateKey: opts.privateKey ?? null,
-    viewScript: opts.viewScript,
+    viewScript,
     yuviewDone: false,
     project: null,
   };
-  await store.upsert(id, meta);
-
   const { conn, shell } = await openConnection(meta);
-  const entry = { conn, shell, meta };
-  active.set(id, entry);
-  conn.once('close', () => active.delete(id));
-  conn.once('error', () => active.delete(id));
+  register(id, conn, shell, meta);
+  await store.upsert(id, meta); // 접속 성공 후 저장한다 (실패 시 고아 레코드 방지)
 
-  shell.send(meta.viewScript);
-  const output = await shell.waitQuiet(1000, 8000);
-  meta.yuviewDone = true;
-  await store.upsert(id, { yuviewDone: true });
-
+  let output = '';
+  if (viewScript) {
+    shell.send(viewScript);
+    output = await shell.waitQuiet(1000, 8000);
+    meta.yuviewDone = true;
+    await store.upsert(id, { yuviewDone: true });
+  }
   return { id, output };
 }
 
