@@ -1,0 +1,198 @@
+# ssh-mcp
+
+MCP (Model Context Protocol) server that gives any MCP client (Claude Code, Claude Desktop, Cursor, etc.)
+a persistent SSH shell on legacy Unix hosts, with helpers for a site-specific ClearCase workflow (`yuview`, `rel`, `ctco`).
+
+## Features
+
+- Persistent interactive shell per session (csh/sh), reconnected automatically on demand
+- Sentinel-based `exec` with output capture, plus `send_input` for interactive prompts
+- One-call `connect`: SSH login, view script, `rel` project selection, `XN_HOME` verification
+- SFTP `download_file` / `upload_file` with MD5 verification
+- ClearCase `checkout` (`ctco`)
+- Credentials stored encrypted (AES-256-GCM) under `~/.ssh-mcp/`
+- Legacy SSH algorithm support (DH group1/group14 SHA-1, CBC ciphers, ssh-rsa/ssh-dss)
+
+## Requirements
+
+- Node.js 18 or later
+- Network access to the target SSH host
+
+## Install
+
+The server speaks MCP over stdio. Register it with your MCP client using the command below.
+
+Generic MCP client configuration (JSON):
+
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:<owner>/ssh-mcp"]
+    }
+  }
+}
+```
+
+Claude Code CLI example:
+
+```
+claude mcp add ssh-mcp -- npx -y github:<owner>/ssh-mcp
+```
+
+To run from a local clone instead of npx, install dependencies and point the client at the entry file:
+
+```
+npm install
+node /path/to/ssh-mcp/src/index.js
+```
+
+## Data directory
+
+All state lives in `~/.ssh-mcp/`, separate from the source tree.
+The directory is created with mode 0700 and files with 0600 (POSIX; Windows inherits the `%USERPROFILE%` ACL).
+
+| File | Purpose |
+|---|---|
+| `store.key` | 32-byte AES key, generated on first run |
+| `connection-config.json` | Default connection settings (`password` encrypted) |
+| `session-store.json` | Session metadata (`password` / `privateKey` encrypted) |
+
+If `store.key` is deleted, stored passwords cannot be decrypted and must be re-entered with `save_config`.
+Move the whole directory when migrating to another machine.
+
+Security note: the key and the ciphertext live in the same directory. This protects against a single
+file leaking (backups, accidental sharing), not against an attacker with access to your home directory.
+
+## Tools
+
+| Tool | Description |
+|---|---|
+| `save_config` | Save default connection settings (host, port, username, password, viewScript, project) |
+| `get_config` | Show saved settings with the password masked |
+| `connect` | SSH login → run viewScript → `rel` → select project → verify `XN_HOME`; returns `sessionId` |
+| `create_session` | Open a session with explicit parameters, independent of saved config |
+| `set_project` | Run `rel` and select a project on an existing session |
+| `exec` | Run a shell command and return its output (`timeoutMs` optional) |
+| `send_input` | Send a line to an interactive prompt and return the next output |
+| `download_file` | SFTP download preserving the remote path under `localBase` (default `./downloads`) |
+| `upload_file` | SFTP upload with local/remote MD5 comparison |
+| `checkout` | ClearCase `ctco` on a file (`-c "<comment>"` or `-nc`) |
+| `list_sessions` | List stored sessions and whether each is currently connected |
+| `close_session` | Close the connection and remove the session from the store |
+
+## Typical flow
+
+1. `save_config(...)` once.
+2. `connect()` per session; keep the returned `sessionId`.
+3. `exec(sessionId, "ctls")`, `exec(sessionId, "cat /vobs/...")`, `checkout(...)`.
+4. `close_session(sessionId)` when done.
+
+## Known limitations
+
+- Host key verification is disabled (`hostVerifier` always accepts). Use only on trusted networks.
+- `exec` returns early after 500 ms of silence when the command has not finished; long-silent commands may be interrupted.
+- SFTP runs outside the ClearCase view, so `download_file` / `upload_file` do not see VOB paths. Use `exec cat` / heredocs instead.
+- Remote checksum uses `md5sum`, which may be absent on some Unix variants.
+
+---
+
+# ssh-mcp (한국어)
+
+MCP 클라이언트(Claude Code, Claude Desktop, Cursor 등)에 레거시 Unix 호스트용 지속 SSH 셸을 제공하는
+MCP (Model Context Protocol) 서버입니다.
+특수한 ClearCase 작업 흐름(`yuview`, `rel`, `ctco`)을 위한 보조 도구를 포함합니다.
+
+## 기능
+
+- 세션별 지속 인터랙티브 셸(csh/sh), 필요 시 자동 재접속
+- sentinel 기반 `exec` 출력 캡처, 인터랙티브 프롬프트용 `send_input`
+- `connect` 한 번으로 SSH 로그인, view 스크립트, `rel` 프로젝트 선택, `XN_HOME` 확인까지 수행
+- MD5 검증을 포함한 SFTP `download_file` / `upload_file`
+- ClearCase `checkout` (`ctco`)
+- 자격증명은 `~/.ssh-mcp/` 에 AES-256-GCM 암호문으로 저장
+- 레거시 SSH 알고리즘 지원 (DH group1/group14 SHA-1, CBC 암호, ssh-rsa/ssh-dss)
+
+## 요구사항
+
+- Node.js 18 이상
+- 대상 SSH 호스트에 대한 네트워크 접근
+
+## 설치
+
+서버는 stdio 기반 MCP 로 동작합니다. 사용하는 MCP 클라이언트에 아래 명령을 등록합니다.
+
+범용 MCP 클라이언트 설정 (JSON):
+
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:<owner>/ssh-mcp"]
+    }
+  }
+}
+```
+
+Claude Code CLI 예시:
+
+```
+claude mcp add ssh-mcp -- npx -y github:<owner>/ssh-mcp
+```
+
+npx 대신 로컬 클론에서 실행하려면 의존성을 설치한 뒤 클라이언트에 진입 파일을 지정합니다.
+
+```
+npm install
+node /path/to/ssh-mcp/src/index.js
+```
+
+## 데이터 디렉토리
+
+모든 상태는 소스 트리와 분리된 `~/.ssh-mcp/` 에 저장됩니다.
+디렉토리는 0700, 파일은 0600 으로 생성됩니다 (POSIX 기준. Windows 는 `%USERPROFILE%` ACL 을 상속).
+
+| 파일 | 용도 |
+|---|---|
+| `store.key` | 32바이트 AES 키, 최초 실행 시 자동 생성 |
+| `connection-config.json` | 기본 연결 설정 (`password` 는 암호문) |
+| `session-store.json` | 세션 메타 (`password` / `privateKey` 는 암호문) |
+
+`store.key` 가 삭제되면 저장된 비밀번호는 복호화할 수 없으므로 `save_config` 로 재입력해야 합니다.
+다른 PC 로 이전할 때는 디렉토리 전체를 함께 옮깁니다.
+
+보안 유의사항: 키와 암호문이 같은 디렉토리에 있습니다. 파일 단위 유출(백업, 실수로 공유)은 막아주지만
+홈 디렉토리 전체에 접근 가능한 공격자에게는 보호가 되지 않습니다.
+
+## 도구
+
+| 도구 | 설명 |
+|---|---|
+| `save_config` | 기본 연결 설정 저장 (host, port, username, password, viewScript, project) |
+| `get_config` | 저장된 설정 조회 (비밀번호 마스킹) |
+| `connect` | SSH 로그인 → viewScript 실행 → `rel` → 프로젝트 선택 → `XN_HOME` 확인. `sessionId` 반환 |
+| `create_session` | 저장된 설정과 무관하게 파라미터를 직접 지정해 세션 생성 |
+| `set_project` | 기존 세션에서 `rel` 실행 후 프로젝트 선택 |
+| `exec` | 셸 명령 실행 후 출력 반환 (`timeoutMs` 선택) |
+| `send_input` | 인터랙티브 프롬프트에 한 줄 입력 후 다음 출력 반환 |
+| `download_file` | 원격 경로 구조를 유지하며 `localBase`(기본 `./downloads`) 아래로 SFTP 다운로드 |
+| `upload_file` | SFTP 업로드 후 로컬/원격 MD5 비교 |
+| `checkout` | 파일에 ClearCase `ctco` 실행 (`-c "<comment>"` 또는 `-nc`) |
+| `list_sessions` | 저장된 세션 목록과 현재 연결 여부 |
+| `close_session` | 연결 종료 및 스토어에서 세션 제거 |
+
+## 기본 흐름
+
+1. `save_config(...)` 최초 1회.
+2. 세션마다 `connect()` 호출 후 반환된 `sessionId` 보관.
+3. `exec(sessionId, "ctls")`, `exec(sessionId, "cat /vobs/...")`, `checkout(...)`.
+4. 작업 완료 시 `close_session(sessionId)`.
+
+## 알려진 제약
+
+- 호스트 키 검증이 비활성화되어 있습니다 (`hostVerifier` 가 항상 수락). 신뢰할 수 있는 네트워크에서만 사용하십시오.
+- `exec` 는 명령이 끝나지 않은 상태에서 500ms 동안 출력이 없으면 조기 반환합니다. 오랫동안 출력이 없는 명령은 중단될 수 있습니다.
+- SFTP 는 ClearCase view 밖에서 동작하므로 `download_file` / `upload_file` 은 VOB 경로를 인식하지 못합니다. `exec cat` 또는 heredoc 을 사용하십시오.
+- 원격 체크섬은 `md5sum` 을 사용하며 일부 Unix 변종에는 없을 수 있습니다.
