@@ -58,6 +58,7 @@ The directory is created with mode 0700 and files with 0600 (POSIX; Windows inhe
 | `store.key` | 32-byte AES key, generated on first run |
 | `connection-config.json` | Default connection settings (`password` encrypted) |
 | `session-store.json` | Session metadata (`password` / `privateKey` encrypted) |
+| `known_hosts` | Host key fingerprints (`host:port <sha256 hex>`), recorded on first connection |
 
 If `store.key` is deleted, stored passwords cannot be decrypted and must be re-entered with `save_config`.
 Move the whole directory when migrating to another machine.
@@ -91,7 +92,7 @@ file leaking (backups, accidental sharing), not against an attacker with access 
 
 ## Known limitations
 
-- Host key verification is disabled (`hostVerifier` always accepts). Use only on trusted networks.
+- Host keys are trusted on first use and pinned in `~/.ssh-mcp/known_hosts`. A later mismatch is rejected; if the server key was legitimately changed, delete that host's line.
 - `exec` waits for completion up to `timeoutMs` (default 30000). On timeout it sends Ctrl-C and returns the partial output with a `[timed out ...]` prefix. Interactive commands such as `rel` must go through `send_input`.
 - SFTP runs outside the ClearCase view, so `download_file` / `upload_file` do not see VOB paths. Use `exec cat` / heredocs instead.
 - Remote checksum uses `md5sum`, which may be absent on some Unix variants.
@@ -159,6 +160,7 @@ node /path/to/ssh-mcp/src/index.js
 | `store.key` | 32바이트 AES 키, 최초 실행 시 자동 생성 |
 | `connection-config.json` | 기본 연결 설정 (`password` 는 암호문) |
 | `session-store.json` | 세션 메타 (`password` / `privateKey` 는 암호문) |
+| `known_hosts` | 호스트 키 지문 (`host:port <sha256 hex>`), 최초 접속 시 기록 |
 
 `store.key` 가 삭제되면 저장된 비밀번호는 복호화할 수 없으므로 `save_config` 로 재입력해야 합니다.
 다른 PC 로 이전할 때는 디렉토리 전체를 함께 옮깁니다.
@@ -192,7 +194,7 @@ node /path/to/ssh-mcp/src/index.js
 
 ## 알려진 제약
 
-- 호스트 키 검증이 비활성화되어 있습니다 (`hostVerifier` 가 항상 수락). 신뢰할 수 있는 네트워크에서만 사용하십시오.
+- 호스트 키는 최초 접속 시 신뢰(trust on first use)하여 `~/.ssh-mcp/known_hosts` 에 고정됩니다. 이후 불일치하면 접속을 거부하며, 서버 키가 정당하게 바뀐 경우 해당 호스트 줄을 삭제하십시오.
 - `exec` 는 `timeoutMs`(기본 30000) 까지 완료를 기다립니다. 타임아웃 시 Ctrl-C 를 보내고 `[timed out ...]` 접두어와 함께 부분 출력을 반환합니다. `rel` 같은 인터랙티브 명령은 `send_input` 으로 실행해야 합니다.
 - SFTP 는 ClearCase view 밖에서 동작하므로 `download_file` / `upload_file` 은 VOB 경로를 인식하지 못합니다. `exec cat` 또는 heredoc 을 사용하십시오.
 - 원격 체크섬은 `md5sum` 을 사용하며 일부 Unix 변종에는 없을 수 있습니다.

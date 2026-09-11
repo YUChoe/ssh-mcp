@@ -1,6 +1,8 @@
 import { Client } from 'ssh2';
 import { randomUUID } from 'crypto';
 import * as store from './store.js';
+import { verifyHostKey } from './knownhosts.js';
+import { KNOWN_HOSTS_PATH } from './paths.js';
 
 const MARKER = '__MCP_DONE__';
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r/g;
@@ -116,10 +118,21 @@ async function openConnection(meta) {
   const { host, port, username, password, privateKey } = meta;
   const conn = new Client();
   await new Promise((res, rej) => {
-    const opts = { host, port, username, algorithms: LEGACY, hostVerifier: () => true };
+    // 호스트 키는 ~/.ssh-mcp/known_hosts 로 검증한다. 최초 접속 시 기록, 이후 불일치는 거부
+    let mismatch = false;
+    const opts = {
+      host, port, username, algorithms: LEGACY,
+      hostHash: 'sha256',
+      hostVerifier: (fingerprint) => {
+        mismatch = verifyHostKey(host, port, fingerprint) === 'mismatch';
+        return !mismatch;
+      },
+    };
     if (password) opts.password = password;
     if (privateKey) opts.privateKey = privateKey;
-    conn.once('ready', res).once('error', rej);
+    conn.once('ready', res).once('error', e => rej(mismatch
+      ? new Error(`host key mismatch for ${host}:${port}; if the server key was legitimately changed, remove its line from ${KNOWN_HOSTS_PATH}`)
+      : e));
     conn.connect(opts);
   });
   const stream = await new Promise((res, rej) =>
