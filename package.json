@@ -8,6 +8,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ssh2": "^1.16.0"
+    "ssh2": "^1.16.0",
+    "zod": "^4.6.1"
+  },
+  "bin": {
+    "ssh-mcp": "src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

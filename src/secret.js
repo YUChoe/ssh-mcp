@@ -1,10 +1,7 @@
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+import { KEY_PATH, ensureHome } from './paths.js';
 
-// 키 파일은 프로젝트 외부(홈 디렉토리)에 두어 저장 파일과 분리한다
-const KEY_PATH = path.join(os.homedir(), '.ssh-mcp', 'store.key');
 const PREFIX = 'enc:v1:';
 
 let key = null;
@@ -15,7 +12,7 @@ function loadKey() {
     key = Buffer.from(fs.readFileSync(KEY_PATH, 'utf8').trim(), 'hex');
   } catch {
     key = randomBytes(32);
-    fs.mkdirSync(path.dirname(KEY_PATH), { recursive: true });
+    ensureHome();
     fs.writeFileSync(KEY_PATH, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
   }
   return key;

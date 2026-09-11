@@ -1,11 +1,6 @@
 import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { encrypt, decrypt, isEncrypted, mapFields } from './secret.js';
-
-const STORE_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)), '..', 'session-store.json'
-);
+import { STORE_PATH, ensureHome } from './paths.js';
 
 const SECRET_FIELDS = ['password', 'privateKey'];
 
@@ -33,7 +28,8 @@ async function persist() {
   const out = { sessions: Object.fromEntries(
     Object.entries(data.sessions).map(([id, m]) => [id, mapFields(m, SECRET_FIELDS, encrypt)])
   ) };
-  await fs.writeFile(STORE_PATH, JSON.stringify(out, null, 2), 'utf8');
+  ensureHome();
+  await fs.writeFile(STORE_PATH, JSON.stringify(out, null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
 export const get = (id) => data.sessions[id] ?? null;

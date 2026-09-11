@@ -1,11 +1,6 @@
 import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { encrypt, decrypt, isEncrypted } from './secret.js';
-
-const CONFIG_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)), '..', 'connection-config.json'
-);
+import { CONFIG_PATH, ensureHome } from './paths.js';
 
 const DEFAULTS = {
   host: null,
@@ -20,7 +15,8 @@ let cfg = { ...DEFAULTS };
 
 async function persist() {
   const out = { ...cfg, password: encrypt(cfg.password) };
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(out, null, 2), 'utf8');
+  ensureHome();
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(out, null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
 export async function load() {
