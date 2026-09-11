@@ -92,7 +92,7 @@ file leaking (backups, accidental sharing), not against an attacker with access 
 ## Known limitations
 
 - Host key verification is disabled (`hostVerifier` always accepts). Use only on trusted networks.
-- `exec` returns early after 500 ms of silence when the command has not finished; long-silent commands may be interrupted.
+- `exec` waits for completion up to `timeoutMs` (default 30000). On timeout it sends Ctrl-C and returns the partial output with a `[timed out ...]` prefix. Interactive commands such as `rel` must go through `send_input`.
 - SFTP runs outside the ClearCase view, so `download_file` / `upload_file` do not see VOB paths. Use `exec cat` / heredocs instead.
 - Remote checksum uses `md5sum`, which may be absent on some Unix variants.
 
@@ -193,6 +193,6 @@ node /path/to/ssh-mcp/src/index.js
 ## 알려진 제약
 
 - 호스트 키 검증이 비활성화되어 있습니다 (`hostVerifier` 가 항상 수락). 신뢰할 수 있는 네트워크에서만 사용하십시오.
-- `exec` 는 명령이 끝나지 않은 상태에서 500ms 동안 출력이 없으면 조기 반환합니다. 오랫동안 출력이 없는 명령은 중단될 수 있습니다.
+- `exec` 는 `timeoutMs`(기본 30000) 까지 완료를 기다립니다. 타임아웃 시 Ctrl-C 를 보내고 `[timed out ...]` 접두어와 함께 부분 출력을 반환합니다. `rel` 같은 인터랙티브 명령은 `send_input` 으로 실행해야 합니다.
 - SFTP 는 ClearCase view 밖에서 동작하므로 `download_file` / `upload_file` 은 VOB 경로를 인식하지 못합니다. `exec cat` 또는 heredoc 을 사용하십시오.
 - 원격 체크섬은 `md5sum` 을 사용하며 일부 Unix 변종에는 없을 수 있습니다.

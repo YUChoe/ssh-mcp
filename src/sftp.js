@@ -48,9 +48,8 @@ export async function uploadFile(sessionId, localPath, remotePath) {
   sft.end();
 
   // 원격 md5sum으로 체크섬 검증
-  const remoteChecksum = (
-    await session.execCommand(sessionId, `md5sum ${remotePath} | awk '{print $1}'`)
-  ).trim();
+  const { output } = await session.execCommand(sessionId, `md5sum ${remotePath} | awk '{print $1}'`);
+  const remoteChecksum = output.trim();
 
   return {
     localPath,

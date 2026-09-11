@@ -10,6 +10,10 @@ import * as config from './config.js';
 await store.load();
 await config.load();
 
+// exec 결과를 텍스트로 변환한다. 타임아웃 시 부분 출력임을 앞에 표기한다
+const execText = ({ output, timedOut }, timeoutMs) =>
+  timedOut ? `[timed out after ${timeoutMs}ms; command interrupted, partial output]\n${output}` : output;
+
 const server = new McpServer({ name: 'ssh-mcp', version: '0.2.0' });
 
 // ── 설정 관리 ──────────────────────────────────────────────────────
@@ -113,9 +117,9 @@ server.tool(
     command: z.string(),
     timeoutMs: z.number().optional(),
   },
-  async ({ sessionId, command, timeoutMs }) => {
-    const out = await session.execCommand(sessionId, command, timeoutMs);
-    return { content: [{ type: 'text', text: out }] };
+  async ({ sessionId, command, timeoutMs = 30000 }) => {
+    const result = await session.execCommand(sessionId, command, timeoutMs);
+    return { content: [{ type: 'text', text: execText(result, timeoutMs) }] };
   }
 );
 
@@ -176,8 +180,8 @@ server.tool(
   },
   async ({ sessionId, remotePath, comment }) => {
     const commentArg = comment ? `-c "${comment}"` : '-nc';
-    const out = await session.execCommand(sessionId, `ctco ${commentArg} ${remotePath}`);
-    return { content: [{ type: 'text', text: out }] };
+    const result = await session.execCommand(sessionId, `ctco ${commentArg} ${remotePath}`);
+    return { content: [{ type: 'text', text: execText(result, 30000) }] };
   }
 );
 

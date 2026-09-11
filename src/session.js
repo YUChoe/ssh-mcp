@@ -17,85 +17,71 @@ class Shell {
     this.stream = stream;
     this.buf = '';
     this.waiters = [];
+    this.queue = Promise.resolve(); // 같은 세션의 명령을 순차 실행한다 (공유 버퍼 보호)
     stream.on('data', c => { this.buf += c.toString(); this._notify(); });
     stream.stderr?.on('data', c => { this.buf += c.toString(); this._notify(); });
     stream.once('close', () => this._settle());
   }
 
   _notify() {
-    const firstNL = this.buf.indexOf('\n');
-    const searchFrom = firstNL === -1 ? 0 : firstNL + 1;
     for (let i = this.waiters.length - 1; i >= 0; i--) {
       const w = this.waiters[i];
-      if (w.marker) {
-        const pos = this.buf.indexOf(w.marker, searchFrom);
-        if (pos === -1) continue;
-      }
+      if (this.buf.indexOf(w.marker) === -1) continue;
       clearTimeout(w.timer);
       this.waiters.splice(i, 1);
-      w.resolve(this._flush(w.marker));
+      w.resolve(this._flush(w));
     }
   }
 
   _settle() {
-    this.waiters.forEach(w => { clearTimeout(w.timer); w.resolve(this._flush(null)); });
+    this.waiters.forEach(w => { clearTimeout(w.timer); w.resolve(this._flush(w)); });
     this.waiters = [];
   }
 
-  _flush(marker) {
+  // 버퍼에서 명령 출력만 추출한다.
+  // tty echo 줄(echoMark 포함)까지 버리고, 출력 sentinel(marker) 직전까지를 반환한다.
+  // echo 줄 앞에 남아 있던 이전 명령의 잔여 출력(프롬프트 등)도 함께 제거된다.
+  _flush({ marker, echoMark }) {
     let out = this.buf;
-    if (marker) {
-      const firstNL = out.indexOf('\n');
-      const searchFrom = firstNL === -1 ? 0 : firstNL + 1;
-      const idx = out.indexOf(marker, searchFrom);
-      if (idx !== -1) out = out.slice(0, idx);
-      const markerIdx = this.buf.indexOf(marker, searchFrom);
-      this.buf = markerIdx !== -1 ? this.buf.slice(markerIdx + marker.length) : '';
-    } else {
-      this.buf = '';
+    this.buf = '';
+    const end = out.indexOf(marker);
+    if (end !== -1) out = out.slice(0, end);
+    const e = out.indexOf(echoMark);
+    if (e !== -1) {
+      const nl = out.indexOf('\n', e);
+      out = nl === -1 ? '' : out.slice(nl + 1);
     }
-    const clean = out.replace(ANSI_RE, '').replace(/\r/g, '');
-    const nl = clean.indexOf('\n');
-    return (nl === -1 ? '' : clean.slice(nl + 1)).trimEnd();
+    return out.replace(ANSI_RE, '').trimEnd();
   }
 
   send(text) { this.stream.write(text + '\n'); }
 
+  // 큐에 넣어 순차 실행한다. 앞 작업의 실패는 뒤 작업에 전파하지 않는다
+  enqueue(fn) {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  // sentinel 수신 또는 timeoutMs 까지 대기한다. 타임아웃 시 Ctrl-C 로 명령을 중단하고 부분 출력을 반환한다.
+  // sentinel 은 명령에서 따옴표로 분할해 보내므로 tty echo 줄에는 리터럴이 나타나지 않는다.
   exec(command, timeoutMs = 30000) {
     return new Promise(resolve => {
-      const sentinel = `${MARKER}_${Date.now()}`;
-      let quietTimer = null;
-      let resolved = false;
-
-      const safeResolve = (val) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(quietTimer);
-        this.stream.off('data', onData);
-        resolve(val);
+      const ts = Date.now();
+      const w = {
+        marker: `${MARKER}_${ts}`,
+        echoMark: `echo ${MARKER}"_"${ts}`,
+        resolve: output => resolve({ output, timedOut: false }),
       };
-
-      // quiet timer: interactive 명령용 조기 반환 (sentinel 미감지 시만 동작)
-      const onData = () => {
-        if (resolved) return;
-        clearTimeout(quietTimer);
-        quietTimer = setTimeout(() => {
-          const i = this.waiters.findIndex(w => w.marker === sentinel);
-          if (i === -1) return;
-          clearTimeout(this.waiters[i].timer);
-          this.waiters.splice(i, 1);
-          this.stream.write('\x03');
-          safeResolve(this._flush(null));
-        }, 500);
-      };
-      this.stream.on('data', onData);
-
-      // 원래 MVP 방식: _notify가 sentinel 감지 시 즉시 resolve
-      const timer = setTimeout(() => safeResolve(this._flush(null)), timeoutMs);
-      this.waiters.push({ marker: sentinel, resolve: (val) => safeResolve(val), timer });
+      w.timer = setTimeout(() => {
+        const i = this.waiters.indexOf(w);
+        if (i !== -1) this.waiters.splice(i, 1);
+        this.stream.write('\x03');
+        resolve({ output: this._flush(w), timedOut: true });
+      }, timeoutMs);
+      this.waiters.push(w);
       this.buf = '';
-      this.stream.write(`${command} ; echo ${sentinel}\n`);
-      onData();
+      this.stream.write(`${command} ; ${w.echoMark}\n`);
     });
   }
 
@@ -197,27 +183,29 @@ export async function createSession(opts) {
 
 export async function setProject(id, project) {
   const { shell, meta } = await ensure(id);
-  shell.send('rel');
-  await shell.waitQuiet(1500, 10000);
-  shell.send(project);
-  const output = await shell.waitQuiet(1500, 15000);
-  const envOut = await shell.exec('env | grep XN_HOME');
-  if (envOut.includes('XN_HOME=')) {
-    meta.project = project;
-    await store.upsert(id, { project });
-  }
-  return { output, env: envOut };
+  return shell.enqueue(async () => {
+    shell.send('rel');
+    await shell.waitQuiet(1500, 10000);
+    shell.send(project);
+    const output = await shell.waitQuiet(1500, 15000);
+    const { output: envOut } = await shell.exec('env | grep XN_HOME');
+    if (envOut.includes('XN_HOME=')) {
+      meta.project = project;
+      await store.upsert(id, { project });
+    }
+    return { output, env: envOut };
+  });
 }
 
+// 반환: { output, timedOut }
 export async function execCommand(id, command, timeoutMs = 30000) {
   const { shell } = await ensure(id);
-  return shell.exec(command, timeoutMs);
+  return shell.enqueue(() => shell.exec(command, timeoutMs));
 }
 
 export async function sendInput(id, input, quietMs = 1000, timeoutMs = 10000) {
   const { shell } = await ensure(id);
-  shell.send(input);
-  return shell.waitQuiet(quietMs, timeoutMs);
+  return shell.enqueue(() => { shell.send(input); return shell.waitQuiet(quietMs, timeoutMs); });
 }
 
 export function listSessions() {
