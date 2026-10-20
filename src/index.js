@@ -31,14 +31,14 @@ server.tool(
 
 server.tool(
   'save_config',
-  '기본 연결 설정을 저장한다. 이후 connect() 호출 시 저장된 값이 사용된다',
+  '기본 연결 설정을 저장한다(기존 설정 전체 교체). 이후 connect() 호출 시 저장된 값이 사용된다',
   {
     host: z.string().describe('SSH 호스트 주소'),
     port: z.number().optional().describe('SSH 포트 (기본 22)'),
     username: z.string().describe('SSH 계정'),
     password: z.string().describe('SSH 패스워드'),
-    viewScript: z.string().describe('ClearCase view 설정 스크립트명 (예: yuview)'),
-    project: z.string().describe('기본 프로젝트명 (예: NEMS_LGU_V1.1)'),
+    viewScript: z.string().optional().describe('ClearCase view 설정 스크립트명 (예: yuview). ClearCase 가 없는 서버는 생략'),
+    project: z.string().optional().describe('기본 프로젝트명 (예: NEMS_LGU_V1.1). viewScript 가 있을 때만 지정'),
   },
   async (args) => {
     const saved = await config.save(args);
@@ -51,7 +51,7 @@ server.tool(
 
 server.tool(
   'connect',
-  '저장된 설정으로 SSH 연결 → viewScript 실행 → 프로젝트 설정까지 수행한다. 설정이 없으면 save_config를 먼저 호출해야 한다',
+  '저장된 설정으로 SSH 연결 → viewScript 실행 → 프로젝트 설정까지 수행한다. viewScript/project 가 없으면 해당 단계는 생략한다. 설정이 없으면 save_config를 먼저 호출해야 한다',
   {},
   async () => {
     const missing = config.validate();
@@ -65,15 +65,15 @@ server.tool(
     }
 
     const cfg = config.get();
-    const { id, output } = await session.createSession(cfg);
-    const { output: projOut, env } = await session.setProject(id, cfg.project);
+    const { id, output, reused } = await session.createSession(cfg);
+    const result = { sessionId: id, viewOutput: output };
+    // 재사용 세션이 이미 같은 프로젝트면 rel 을 생략한다
+    if (cfg.project && !(reused && store.get(id)?.project === cfg.project)) {
+      const { output: projOut, env, selected } = await session.setProject(id, cfg.project);
+      Object.assign(result, { projectOutput: projOut, env, selected });
+    }
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ sessionId: id, viewOutput: output, projectOutput: projOut, env }),
-      }],
-    };
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );
 
@@ -111,7 +111,7 @@ server.tool(
 
 server.tool(
   'exec',
-  'VOB 환경에서 쉘 명령(ls, grep, find, ctls 등)을 실행하고 출력을 반환한다',
+  'VOB 환경에서 쉘 명령(ls, grep, find, ctls 등)을 실행하고 출력을 반환한다. 입력을 기다리는 대화형 명령은 send_input 을 사용한다',
   {
     sessionId: z.string(),
     command: z.string(),
@@ -178,6 +178,7 @@ server.tool(
     remotePath: z.string(),
   },
   async ({ sessionId, remotePath }) => {
+    session.requireView(sessionId);
     // ctco 는 자체적으로 -c "<comment>" 를 붙이는 사이트 스크립트이므로 -c/-nc 를 넘기면 cleartool 이 거부한다
     const result = await session.execCommand(sessionId, `ctco ${session.shellQuote(remotePath)}`);
     return { content: [{ type: 'text', text: execText(result, 30000) }] };

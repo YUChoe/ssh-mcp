@@ -32,14 +32,16 @@ export async function load() {
 
 export const get = () => ({ ...cfg });
 
-export async function save(patch) {
-  cfg = { ...cfg, ...patch };
+// 전체 교체한다. 병합하면 ClearCase 서버에서 미사용 서버로 바꿀 때 이전 viewScript/project 가 남는다
+export async function save(next) {
+  cfg = { ...DEFAULTS, ...next };
   await persist();
   return { ...cfg };
 }
 
+// viewScript/project 는 ClearCase 서버에서만 지정한다. project 는 viewScript 가 있어야 의미가 있다
 export function validate() {
-  const missing = ['host', 'username', 'password', 'viewScript', 'project']
-    .filter(k => !cfg[k]);
+  const missing = ['host', 'username', 'password'].filter(k => !cfg[k]);
+  if (cfg.project && !cfg.viewScript) missing.push('viewScript');
   return missing.length === 0 ? null : missing;
 }
